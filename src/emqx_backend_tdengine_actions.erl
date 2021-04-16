@@ -24,13 +24,9 @@
 
 -import(emqx_rule_utils, [str/1]).
 
--export([on_resource_create/2,
-  on_resource_destroy/2,
-  on_get_resource_status/2]).
+-export([on_resource_create/2, on_resource_destroy/2, on_get_resource_status/2]).
 
--export([on_action_create_data_to_tdengine/2,
-  on_action_data_to_tdengine/2,
-  on_action_destroy_data_to_tdengine/2]).
+-export([on_action_create_data_to_tdengine/2, on_action_data_to_tdengine/2, on_action_destroy_data_to_tdengine/2]).
 
 -resource_type(#{create => on_resource_create,
   description =>
