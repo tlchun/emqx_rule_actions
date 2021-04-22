@@ -17,56 +17,31 @@
 -include("../include/rule_actions.hrl").
 
 -export([async_call_back/3, batcher_flush/2]).
-
 -export([batch_insert/3, ecql_query/3, batch_sql_insert/2]).
-
 -export([connect/1]).
 
 -import(emqx_rule_utils, [str/1]).
-
+%% 资源创建，资源状态，资源销毁
 -export([on_resource_create/2, on_get_resource_status/2, on_resource_destroy/2]).
-
+%% 动作创建cassa,查询订阅数据，查询离线嘻嘻
 -export([on_action_create_data_to_cassa/2, on_action_destroy_data_to_cassa/2, on_action_create_lookup_sub/2, on_action_create_offline_msg/2]).
-
+%% 数据存到cassa,查询订阅数据，离线消息保存到cassa
 -export([on_action_data_to_cassa/2, on_action_lookup_sub_to_cassa/2, on_action_offline_msg_to_cassa/2]).
 
--resource_type(#{create => on_resource_create,
-  description =>
-  #{en =>
-  <<67, 97, 115, 115, 97, 110, 100, 114, 97, 32, 68,
-    97, 116, 97, 98, 97, 115, 101>>,
-    zh =>
-    <<67, 97, 115, 115, 97, 110, 100, 114, 97, 32, 230,
-      149, 176, 230, 141, 174, 229, 186, 147>>},
+-resource_type(#{create => on_resource_create, description =>
+  #{en => <<67, 97, 115, 115, 97, 110, 100, 114, 97, 32, 68, 97, 116, 97, 98, 97, 115, 101>>,
+    zh => <<67, 97, 115, 115, 97, 110, 100, 114, 97, 32, 230, 149, 176, 230, 141, 174, 229, 186, 147>>},
   destroy => on_resource_destroy, name => backend_cassa,
   params =>
   #{auto_reconnect =>
-  #{default => true,
-    description =>
-    #{en =>
-    <<73, 102, 32, 82, 101, 45, 116, 114,
-      121, 32, 119, 104, 101, 110, 32, 116,
-      104, 101, 32, 67, 111, 110, 110, 101,
-      99, 116, 105, 111, 110, 32, 76, 111,
-      115, 116>>,
-      zh =>
-      <<67, 97, 115, 115, 97, 110, 100, 114,
-        97, 32, 232, 191, 158, 230, 142, 165,
-        230, 150, 173, 229, 188, 128, 229, 144,
-        142, 232, 135, 170, 229, 138, 168, 233,
-        135, 141, 232, 191, 158>>},
+  #{default => true, description =>
+    #{en => <<73, 102, 32, 82, 101, 45, 116, 114, 121, 32, 119, 104, 101, 110, 32, 116, 104, 101, 32, 67, 111, 110, 110, 101, 99, 116, 105, 111, 110, 32, 76, 111, 115, 116>>,
+      zh => <<67, 97, 115, 115, 97, 110, 100, 114, 97, 32, 232, 191, 158, 230, 142, 165, 230, 150, 173, 229, 188, 128, 229, 144, 142, 232, 135, 170, 229, 138, 168, 233, 135, 141, 232, 191, 158>>},
     order => 5,
-    title =>
-    #{en =>
-    <<69, 110, 97, 98, 108, 101, 32, 82, 101,
-      99, 111, 110, 110, 101, 99, 116>>,
-      zh =>
-      <<230, 152, 175, 229, 144, 166, 233, 135,
-        141, 232, 191, 158>>},
+    title => #{en => <<69, 110, 97, 98, 108, 101, 32, 82, 101, 99, 111, 110, 110, 101, 99, 116>>, zh => <<230, 152, 175, 229, 144, 166, 233, 135, 141, 232, 191, 158>>},
     type => boolean},
     cafile =>
-    #{default => <<>>,
-      description =>
+    #{default => <<>>, description =>
       #{en =>
       <<89, 111, 117, 114, 32, 115, 115, 108,
         32, 99, 97, 102, 105, 108, 101>>,
@@ -737,27 +712,16 @@
       232, 161, 168>>},
   types => [backend_cassa]}).
 
-%%
+%% 创建资源
 on_resource_create(ResId, Config = #{<<"nodes">> := Nodes, <<"keyspace">> := Keysapce}) ->
   begin
-    logger:log(info,
-      #{},
-      #{report_cb =>
-      fun (_) ->
-        {logger_header() ++
-          "Initiating Resource ~p, ResId: ~p",
-          [backend_cassa, ResId]}
-      end,
-        mfa =>
-        {emqx_backend_cassa_actions, on_resource_create, 2},
-        line => 327})
+    logger:log(info, #{}, #{report_cb => fun (_) -> {logger_header() ++ "Initiating Resource ~p, ResId: ~p", [backend_cassa, ResId]} end, mfa => {emqx_backend_cassa_actions, on_resource_create, 2}, line => 327})
   end,
   {ok, _} = application:ensure_all_started(ecpool),
   {ok, _} = application:ensure_all_started(ecql),
   SslOpts = case maps:get(<<"ssl">>, Config, false) of
               true ->
-                [{ssl,
-                  emqx_ruls_actions_utils:get_ssl_opts(Config, ResId)}];
+                [{ssl, emqx_ruls_actions_utils:get_ssl_opts(Config, ResId)}];
               false -> []
             end,
   Options = [{nodes, parse_nodes_str(str(Nodes))},
@@ -774,91 +738,48 @@ on_resource_create(ResId, Config = #{<<"nodes">> := Nodes, <<"keyspace">> := Key
   emqx_rule_actions_utils:start_pool(PoolName, emqx_backend_cassa_actions, Options ++ SslOpts),
   #{<<"pool">> => PoolName}.
 
+%% 查询资源状态
 -spec on_get_resource_status(ResId :: binary(), Params :: map()) -> Status :: map().
 on_get_resource_status(_ResId,#{<<"pool">> := PoolName}) ->
-  #{is_alive =>
-  emqx_rule_actions_utils:is_resource_alive(PoolName,
-    fun (Conn) ->
-      {ok, _} =
-        ecql:query(Conn,
-          "SELECT count(1) AS T FROM system.local",
-          ""),
-      ok
-    end)}.
+  #{is_alive => emqx_rule_actions_utils:is_resource_alive(PoolName, fun (Conn) -> {ok, _} = ecql:query(Conn, "SELECT count(1) AS T FROM system.local", ""), ok end)}.
 
+%% 销毁资源
 on_resource_destroy(ResId, #{<<"pool">> := PoolName}) ->
   begin
-    logger:log(info,
-      #{},
-      #{report_cb =>
-      fun (_) ->
-        {logger_header() ++
-          "Destroying Resource ~p, ResId: ~p",
-          [backend_cassa, ResId]}
-      end,
-        mfa =>
-        {emqx_backend_cassa_actions, on_resource_destroy, 2},
-        line => 355})
+    logger:log(info, #{},
+      #{report_cb => fun (_) -> {logger_header() ++ "Destroying Resource ~p, ResId: ~p", [backend_cassa, ResId]} end, mfa => {emqx_backend_cassa_actions, on_resource_destroy, 2}, line => 355})
   end,
   emqx_rule_actions_utils:stop_pool(PoolName).
 
+%% 创建动作，保存数据
 -spec on_action_create_data_to_cassa(Id :: binary(),#{}) -> fun((Msg :: map()) -> any()).
 on_action_create_data_to_cassa(ActId,Opts = #{<<"pool">> := PoolName, <<"sql">> := SQL, <<"enable_batch">> := true}) ->
   begin
-    logger:log(info,
-      #{},
-      #{report_cb =>
-      fun (_) ->
-        {logger_header() ++
-          "Initiating Action ~p, SqlTemplate: ~p",
-          [on_action_create_data_to_cassa, SQL]}
-      end,
+    logger:log(info, #{}, #{report_cb => fun (_) -> {logger_header() ++ "Initiating Action ~p, SqlTemplate: ~p", [on_action_create_data_to_cassa, SQL]} end,
         mfa => {emqx_backend_cassa_actions,on_action_create_data_to_cassa, 2}, line => 362})
   end,
+%%  同步超时
   SyncTimeout = maps:get(<<"sync_timeout">>, Opts, 5000),
+%%  插入模块式
   InsertMode = maps:get(<<"insert_mode">>,Opts,<<"sync">>),
-  BatcherPName = list_to_atom("cassa_batcher:" ++
-  str(ActId)),
+%%  批处理名称
+  BatcherPName = list_to_atom("cassa_batcher:" ++ str(ActId)),
   emqx_rule_actions_utils:start_batcher_pool(BatcherPName, emqx_backend_cassa_actions, Opts,
     case InsertMode of
-      <<"sync">> ->
-        {PoolName,ActId,{sync, SyncTimeout}};
-      <<"async">> ->
-        {PoolName, ActId, async}
+      <<"sync">> -> {PoolName,ActId,{sync, SyncTimeout}};
+      <<"async">> -> {PoolName, ActId, async}
     end),
   SQLInsert = emqx_rule_utils:preproc_tmpl(SQL),
   SyncTimeout = maps:get(<<"sync_timeout">>, Opts, 5000),
-  {[{'Opts', Opts},
-    {'PoolName', PoolName},
-    {'SQL', SQL},
-    {'ActId', ActId},
-    {'SyncTimeout', SyncTimeout},
-    {'InsertMode', InsertMode},
-    {'BatcherPName', BatcherPName},
-    {'SQLInsert', SQLInsert},
-    {'SyncTimeout', SyncTimeout}],
-    Opts#{batcher_pname => BatcherPName}};
+  {[{'Opts', Opts}, {'PoolName', PoolName}, {'SQL', SQL}, {'ActId', ActId}, {'SyncTimeout', SyncTimeout},
+    {'InsertMode', InsertMode}, {'BatcherPName', BatcherPName}, {'SQLInsert', SQLInsert}, {'SyncTimeout', SyncTimeout}], Opts#{batcher_pname => BatcherPName}};
 
 on_action_create_data_to_cassa(ActId,Opts = #{<<"pool">> := PoolName, <<"sql">> := SQL}) ->
   begin
-    logger:log(info,
-      #{},
-      #{report_cb =>
-      fun (_) ->
-        {logger_header() ++
-          "Initiating Action ~p, SqlTemplate: ~p",
-          [on_action_create_data_to_cassa, SQL]}
-      end,
-        mfa => {emqx_backend_cassa_actions,on_action_create_data_to_cassa, 2},line => 376})
+    logger:log(info, #{}, #{report_cb => fun (_) -> {logger_header() ++ "Initiating Action ~p, SqlTemplate: ~p", [on_action_create_data_to_cassa, SQL]} end, mfa => {emqx_backend_cassa_actions,on_action_create_data_to_cassa, 2},line => 376})
   end,
   {PrepareStatement, ParamsTokens} = emqx_rule_utils:preproc_sql(SQL, '?'),
-  {[{'Opts', Opts},
-    {'PoolName', PoolName},
-    {'SQL', SQL},
-    {'ActId', ActId},
-    {'ParamsTokens', ParamsTokens},
-    {'PrepareStatement', PrepareStatement}],
-    Opts}.
+  {[{'Opts', Opts}, {'PoolName', PoolName}, {'SQL', SQL}, {'ActId', ActId}, {'ParamsTokens', ParamsTokens}, {'PrepareStatement', PrepareStatement}], Opts}.
 
 on_action_data_to_cassa(Msg, _Envs = #{'__bindings__' :=
     #{'ActId' := ActId,
@@ -884,40 +805,15 @@ on_action_data_to_cassa(Msg, _Envs = #{'__bindings__' :=
   of
     ok ->
       begin
-        logger:log(debug,
-          #{},
-          #{report_cb =>
-          fun (_) ->
-            {logger_header() ++
-              "async insert request sent",
-              []}
-          end,
-            mfa =>
-            {emqx_backend_cassa_actions,
-              on_action_data_to_cassa,
-              2},
-            line => 392})
+        logger:log(debug, #{}, #{report_cb => fun (_) -> {logger_header() ++ "async insert request sent", []} end, mfa => {emqx_backend_cassa_actions, on_action_data_to_cassa, 2}, line => 392})
       end,
       case InsertMode of
-        <<"sync">> ->
-          emqx_rule_metrics:inc_actions_success(ActId);
+        <<"sync">> -> emqx_rule_metrics:inc_actions_success(ActId);
         _ -> ok
       end;
     {error, Reason} ->
       begin
-        logger:log(error,
-          #{},
-          #{report_cb =>
-          fun (_) ->
-            {logger_header() ++
-              "Cassandra insert failed reason: ~p",
-              [Reason]}
-          end,
-            mfa =>
-            {emqx_backend_cassa_actions,
-              on_action_data_to_cassa,
-              2},
-            line => 398})
+        logger:log(error, #{}, #{report_cb => fun (_) -> {logger_header() ++ "Cassandra insert failed reason: ~p", [Reason]} end, mfa => {emqx_backend_cassa_actions, on_action_data_to_cassa, 2}, line => 398})
       end,
       emqx_rule_metrics:inc_actions_error(ActId),
       {badact, Reason};
@@ -987,20 +883,14 @@ on_action_data_to_cassa(Msg,
       emqx_rule_metrics:inc_actions_success(ActId)
   end.
 
-on_action_destroy_data_to_cassa(_ActId,
-    #{batcher_pname := BatcherPName}) ->
+on_action_destroy_data_to_cassa(_ActId, #{batcher_pname := BatcherPName}) ->
   emqx_rule_actions_utils:stop_batcher_pool(BatcherPName);
 on_action_destroy_data_to_cassa(_ActId, _) -> ok.
 
-on_action_create_offline_msg(ActId,
-    Opts = #{<<"pool">> := PoolName,
-      <<"time_range">> := TimeRange0,
-      <<"max_returned_count">> :=
-      MaxReturnedCount}) ->
+on_action_create_offline_msg(ActId, Opts = #{<<"pool">> := PoolName, <<"time_range">> := TimeRange0, <<"max_returned_count">> := MaxReturnedCount}) ->
   TimeRange = case to_undefined(TimeRange0) of
                 undefined -> undefined;
-                TimeRange0 ->
-                  cuttlefish_duration:parse(binary_to_list(TimeRange0), s)
+                TimeRange0 -> cuttlefish_duration:parse(binary_to_list(TimeRange0), s)
               end,
   {[{'TimeRange0', TimeRange0},
     {'Opts', Opts},
@@ -1010,53 +900,28 @@ on_action_create_offline_msg(ActId,
     {'TimeRange', TimeRange}],
     Opts}.
 
-on_action_offline_msg_to_cassa(Msg = #{event := Event,
-  topic := Topic},
-    _Envs = #{'__bindings__' :=
-    #{'ActId' := ActId,
-      'PoolName' := PoolName,
-      'TimeRange' := TimeRange,
-      'MaxReturnedCount' :=
-      MaxReturnedCount}}) ->
+on_action_offline_msg_to_cassa(Msg = #{event := Event, topic := Topic}, _Envs = #{'__bindings__' := #{'ActId' := ActId, 'PoolName' := PoolName, 'TimeRange' := TimeRange, 'MaxReturnedCount' := MaxReturnedCount}}) ->
   case Event of
-    'message.acked' ->
-      delete_message(ActId, Topic, Msg, PoolName);
-    'message.publish' ->
-      insert_message(ActId, Topic, Msg, PoolName);
+    'message.acked' -> delete_message(ActId, Topic, Msg, PoolName);
+    'message.publish' -> insert_message(ActId, Topic, Msg, PoolName);
     'session.subscribed' ->
-      case lookup_message(ActId,
-        Topic,
-        PoolName,
-        TimeRange,
-        to_undefined(MaxReturnedCount))
-      of
+      case lookup_message(ActId, Topic, PoolName, TimeRange, to_undefined(MaxReturnedCount)) of
         {error, Reason} -> {badact, Reason};
-        Messages ->
-          [self() ! {deliver, Topic, M} || M <- Messages]
+        Messages -> [self() ! {deliver, Topic, M} || M <- Messages]
       end
   end.
 
-on_action_create_lookup_sub(ActId,
-    Opts = #{<<"pool">> := PoolName}) ->
-  {[{'Opts', Opts},
-    {'PoolName', PoolName},
-    {'ActId', ActId}],
-    Opts}.
+on_action_create_lookup_sub(ActId, Opts = #{<<"pool">> := PoolName}) ->
+  {[{'Opts', Opts}, {'PoolName', PoolName}, {'ActId', ActId}], Opts}.
 
-on_action_lookup_sub_to_cassa(Msg = #{event := Event,
-  clientid := ClientId},
-    Envs) ->
-  ActId = maps:get('ActId',
-    maps:get('__bindings__', Envs, #{})),
-  PoolName = maps:get('PoolName',
-    maps:get('__bindings__', Envs, #{})),
+on_action_lookup_sub_to_cassa(Msg = #{event := Event, clientid := ClientId}, Envs) ->
+  ActId = maps:get('ActId', maps:get('__bindings__', Envs, #{})),
+  PoolName = maps:get('PoolName', maps:get('__bindings__', Envs, #{})),
   case Event of
     'client.connected' ->
       case lookup_subscribe(ActId, ClientId, PoolName) of
         [] -> ok;
-        TopicTable ->
-          self() ! {subscribe, TopicTable},
-          ok
+        TopicTable -> self() ! {subscribe, TopicTable}, ok
       end;
     'session.subscribed' ->
       insert_subscribe(ActId, ClientId, Msg, PoolName)
@@ -1065,27 +930,14 @@ on_action_lookup_sub_to_cassa(Msg = #{event := Event,
 connect(Opts) -> ecql:connect(Opts).
 
 batcher_flush(Batch, State) ->
-  {emqx_backend_cassa_actions:batch_sql_insert(Batch,
-    {emqx_backend_cassa_actions,
-      batch_insert,
-      [State]}),
-    State}.
+  {emqx_backend_cassa_actions:batch_sql_insert(Batch, {emqx_backend_cassa_actions, batch_insert, [State]}), State}.
 
-batch_insert(SQL, _BatchLen,
-    {PoolName, _ActId, {sync, SyncTimeout}}) ->
-  ecpool:pick_and_do(PoolName,
-    {ecql, query, [SQL]},
-    {handover, SyncTimeout});
+batch_insert(SQL, _BatchLen, {PoolName, _ActId, {sync, SyncTimeout}}) ->
+  ecpool:pick_and_do(PoolName, {ecql, query, [SQL]}, {handover, SyncTimeout});
 batch_insert(SQL, BatchLen, {PoolName, ActId, async}) ->
-  ecpool:pick_and_do(PoolName,
-    {ecql, query, [SQL]},
-    {handover_async,
-      {emqx_backend_cassa_actions,
-        async_call_back,
-        [ActId, BatchLen]}}).
+  ecpool:pick_and_do(PoolName, {ecql, query, [SQL]}, {handover_async, {emqx_backend_cassa_actions, async_call_back, [ActId, BatchLen]}}).
 
-cassa_query(PoolName, PrepareStatement,
-    PrepareParams) ->
+cassa_query(PoolName, PrepareStatement, PrepareParams) ->
   begin
     logger:log(debug,
       #{},
@@ -1126,24 +978,11 @@ async_cassa_query(PoolName, Query, Params) ->
 
 delete_message(ActId, Topic, Msg, Pool) ->
   #{id := MsgId} = Msg,
-  Del = <<"delete from mqtt_msg where topic = ? "
-  "and msgid = ?">>,
+  Del = <<"delete from mqtt_msg where topic = ? and msgid = ?">>,
   case async_cassa_query(Pool, Del, [Topic, MsgId]) of
     {error, Error} ->
       begin
-        logger:log(error,
-          #{},
-          #{report_cb =>
-          fun (_) ->
-            {logger_header() ++
-              "Failed to delete msg: ~p",
-              [Error]}
-          end,
-            mfa =>
-            {emqx_backend_cassa_actions,
-              delete_message,
-              4},
-            line => 506})
+        logger:log(error, #{}, #{report_cb => fun (_) -> {logger_header() ++ "Failed to delete msg: ~p", [Error]} end, mfa => {emqx_backend_cassa_actions, delete_message, 4}, line => 506})
       end,
       emqx_rule_metrics:inc_actions_error(ActId),
       {badact, Error};

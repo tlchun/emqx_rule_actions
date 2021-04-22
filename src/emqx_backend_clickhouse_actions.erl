@@ -402,7 +402,7 @@
         230, 143, 146, 229, 133, 165, 230, 136,
         150, 230, 155, 180, 230, 150, 176, 230,
         149, 176, 230, 141, 174, 229, 136, 176,
-        32, 67, 108, 105, 99, 107, 72, 111, 117,
+        32, 67, 108, 105, 99, 107, 72, 111, 117,SQL
         115, 101, 32, 230, 149, 176, 230, 141,
         174, 229, 186, 147>>},
       input => textarea, order => 6, required => true,
@@ -427,16 +427,9 @@
 
 on_resource_create(ResId, #{<<"server">> := Server, <<"pool_size">> := PoolSize, <<"user">> := User, <<"key">> := Key}) ->
   begin
-    logger:log(info,
-      #{},
-      #{report_cb =>
-      fun (_) ->
-        {logger_header() ++
-          "Initiating Resource ~p, ResId: ~p",
-          [backend_clickhouse, ResId]}
-      end,
-        mfa =>
-        {emqx_backend_clickhouse_actions, on_resource_create, 2}, line => 214})
+    logger:log(info, #{},
+      #{report_cb => fun (_) -> {logger_header() ++ "Initiating Resource ~p, ResId: ~p", [backend_clickhouse, ResId]} end,
+        mfa => {emqx_backend_clickhouse_actions, on_resource_create, 2}, line => 214})
   end,
   {ok, _} = application:ensure_all_started(ecpool),
   {ok, _} = application:ensure_all_started(clickhouse),
@@ -445,14 +438,12 @@ on_resource_create(ResId, #{<<"server">> := Server, <<"pool_size">> := PoolSize,
   emqx_rule_actions_utils:start_pool(PoolName, emqx_backend_clickhouse_actions, Options),
   case test_resource_status(PoolName) of
     true -> ok;
-    false ->
-      error({{backend_clickhouse, ResId}, connection_failed})
+    false -> error({{backend_clickhouse, ResId}, connection_failed})
   end,
   #{<<"pool">> => PoolName}.
 
 -spec on_get_resource_status(ResId :: binary(), Params :: map()) -> Status :: map().
-on_get_resource_status(_ResId,#{<<"pool">> := PoolName}) ->
-  #{is_alive => test_resource_status(PoolName)}.
+on_get_resource_status(_ResId,#{<<"pool">> := PoolName}) -> #{is_alive => test_resource_status(PoolName)}.
 
 on_resource_destroy(ResId, #{<<"pool">> := PoolName}) ->
   begin
@@ -473,34 +464,18 @@ on_resource_destroy(ResId, #{<<"pool">> := PoolName}) ->
   emqx_rule_actions_utils:stop_pool(PoolName).
 
 -spec on_action_create_data_to_clickhouse(Id :: binary(), #{}) -> fun((Msg :: map()) -> any()).
-on_action_create_data_to_clickhouse(ActId,
-    Opts = #{<<"enable_batch">> :=
-    EnableBatch = true,
-      <<"pool">> := PoolName,
-      <<"sql">> := SQL}) ->
-  BatcherPName = list_to_atom("clickhouse_batcher:" ++
-  str(ActId)),
+on_action_create_data_to_clickhouse(ActId, Opts = #{<<"enable_batch">> := EnableBatch = true, <<"pool">> := PoolName, <<"sql">> := SQL}) ->
+  BatcherPName = list_to_atom("clickhouse_batcher:" ++ str(ActId)),
   SyncTimeout = maps:get(<<"sync_timeout">>, Opts, 5000),
-  InsertMode = maps:get(<<"insert_mode">>,
-    Opts,
-    <<"sync">>),
-  emqx_rule_actions_utils:start_batcher_pool(BatcherPName,
-    emqx_backend_clickhouse_actions,
-    Opts,
+  InsertMode = maps:get(<<"insert_mode">>, Opts, <<"sync">>),
+  emqx_rule_actions_utils:start_batcher_pool(BatcherPName, emqx_backend_clickhouse_actions, Opts,
     case InsertMode of
-      <<"sync">> ->
-        {PoolName,
-          ActId,
-          {sync, SyncTimeout}};
-      <<"async">> ->
-        {PoolName, ActId, async}
+      <<"sync">> -> {PoolName, ActId, {sync, SyncTimeout}};
+      <<"async">> -> {PoolName, ActId, async}
     end),
-  {ok, {SQLInsertPart0, SQLParamPart0}} =
-    emqx_rule_actions_utils:split_insert_sql(SQL),
-  SQLInsertPartTks =
-    emqx_rule_utils:preproc_tmpl(SQLInsertPart0),
-  SQLParamPartTks =
-    emqx_rule_utils:preproc_tmpl(SQLParamPart0),
+  {ok, {SQLInsertPart0, SQLParamPart0}} = emqx_rule_actions_utils:split_insert_sql(SQL),
+  SQLInsertPartTks = emqx_rule_utils:preproc_tmpl(SQLInsertPart0),
+  SQLParamPartTks = emqx_rule_utils:preproc_tmpl(SQLParamPart0),
   {[{'Opts', Opts},
     {'PoolName', PoolName},
     {'EnableBatch', EnableBatch},
